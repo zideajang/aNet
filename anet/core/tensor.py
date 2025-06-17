@@ -37,9 +37,9 @@ class Tensor:
                 console.print(f"grad shape must match tensor shape in {g.shape}, {t.data.shape}")
             t.grad = g
             t.backward(False)
-    # def mean(self):
-    #     div = Tensor(np.array([1/self.data.size]))
-    #     return self.sum().mul(div)
+    def mean(self):
+        div = Tensor(np.array([1/self.data.size]))
+        return self.sum().mul(div)
 
 
 
