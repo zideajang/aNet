@@ -46,7 +46,7 @@ cd aNet
 
 ## ▶️ 相关视频(b站 zidea2015)
 <div align="center">
-<img src="./assets/vides.png">
+<img src="assets/vides.png">
 </div>
 
 [详细视频链接](https://space.bilibili.com/476895565)
