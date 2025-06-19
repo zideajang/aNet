@@ -3,43 +3,37 @@ import hashlib
 
 import gzip
 import numpy as np
-from anet import Tensor
 from tqdm import trange
 
 import matplotlib.pyplot as plt
-
 from rich.console import Console
+
+from anet import Tensor
+from anet.core.optim import Optimizer,SGD,Adam
+
 console = Console()
 
-# 数据数据
-MNIST_DATASET_PATH = "./datasets/mnist"
+def mnist():
 
-def fetch(url):
-    fp = os.path.join(MNIST_DATASET_PATH,hashlib.md5(url.encode('utf-8')).hexdigest())
-    with open(fp,"rb") as f:
-        dat = f.read()
+    # 数据数据
+    MNIST_DATASET_PATH = "./datasets/mnist"
 
-    return np.frombuffer(gzip.decompress(dat),dtype=np.uint8).copy()
+    def fetch(url):
+        fp = os.path.join(MNIST_DATASET_PATH,hashlib.md5(url.encode('utf-8')).hexdigest())
+        with open(fp,"rb") as f:
+            dat = f.read()
 
-X_train = fetch("http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz")[0x10:].reshape(-1,28,28)
-Y_train = fetch("http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz")[8:]
-X_test = fetch("http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz")[0x10:].reshape(-1,28,28)
-Y_test = fetch("http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz")[8:]
+        return np.frombuffer(gzip.decompress(dat),dtype=np.uint8).copy()
+
+    X_train = fetch("http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz")[0x10:].reshape(-1,28,28)
+    Y_train = fetch("http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz")[8:]
+    X_test = fetch("http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz")[0x10:].reshape(-1,28,28)
+    Y_test = fetch("http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz")[8:]
+    return X_train, Y_train, X_test, Y_test
+X_train, Y_train, X_test, Y_test = mnist()
 
 
-# 校验数据格式
-# console.print(type(X_train))
-# console.print(X_train[0x10:].reshape(-1,28,28).shape)
-# console.print(Y_train[8:][0])
 
-# 预览数据
-# plt.imshow(X_train[0x10:].reshape(-1,28,28)[0])
-# plt.show()
-
-# 超参数
-batch_size= 16
-learning_rate = 0.01
-epoch = 1000
 
 # 定义模型
 def layer_init(input_size,hidden_size):
@@ -47,12 +41,31 @@ def layer_init(input_size,hidden_size):
     ret = np.random.uniform(-1.,1.,size=(input_size,hidden_size))/np.sqrt(input_size*hidden_size)
     return ret.astype(np.float32)
 
-# 初始化每一层的权重， y = wx
-# 784 = 28x28
-layer_1 = Tensor(layer_init(784,128))
-layer_2 = Tensor(layer_init(128,10))
+class Net:
+    def __init__(self):
+        self.layer_1 = Tensor(layer_init(784,128))
+        self.layer_2 = Tensor(layer_init(128,10))
+
+    def forward(self,x):
+        # 全连接层
+        x = x.dot(self.layer_1)
+        # ReLU 激活层
+        x = x.relu()
+        # 全连接
+        x = x.dot(self.layer_2)
+        # logic 层
+        x = x.logsoftmax()
+        return x
+
+model = Net()
+optim = Adam([model.layer_1,model.layer_2],lr=0.01)
 
 # 训练
+# 超参数
+batch_size= 128
+learning_rate = 0.01
+epoch = 1000
+
 losses,accuracies = [],[]
 for i in (t:=trange(epoch)):
     # 在训练数据集中随机采样
@@ -71,44 +84,56 @@ for i in (t:=trange(epoch)):
     y[range(y.shape[0]),Y] = -1.0
     y = Tensor(y)
 
-    # 全连接层
-    x = x.dot(layer_1)
-    # ReLU 激活层
-    x = x.relu()
-    # 全连接
-    x = x_l2 = x.dot(layer_2)
-    # logic 层
-    x = x.logsoftmax()
+    outs = model.forward(x)
+
+    
     # xy
     # NLL Loss
-    x = x.mul(y)
+    loss = outs.mul(y).mean()
     # 计算loss
-    x = x.mean()
-
     # 反向传播
-    x.backward()
+    loss.backward()
+    # 用优化器来更新参数
+    optim.step()
 
-    loss = x.data
-    cat = np.argmax(x_l2.data,axis=1)
+    cat = np.argmax(outs.data,axis=1)
     acc = (cat == Y).mean()
 
-    # SGD
-    layer_1.data = layer_1.data - learning_rate*layer_1.grad
-    layer_2.data = layer_2.data - learning_rate*layer_2.grad
 
-    losses.append(losses)
+    losses.append(loss)
     accuracies.append(acc)
     t.set_description(f"loss {loss} accuracy:{acc}")
 
 
-def predict(x):
-    x = x.dot(layer_1.data)
-    x = np.maximum(x,0)
-    x = x.dot(layer_2.data)
-    return x
 
 def numpy_eval():
-    Y_test_preds_out = predict(X_test.reshape((-1,28*28)))
-    Y_test_preds = np.argmax(Y_test_preds_out,axis=1)
+    Y_test_preds_out = model.forward(Tensor(X_test.reshape((-1,28*28))))
+    Y_test_preds = np.argmax(Y_test_preds_out.data,axis=1)
     return (Y_test==Y_test_preds).mean()
+
 console.print(f"测试准确度:{numpy_eval()}")
+
+# Create a figure with two subplots
+plt.figure(figsize=(12, 5))
+
+# Plot training loss
+plt.subplot(1, 2, 1) # 1 row, 2 columns, first plot
+plt.plot([loss.data for loss in losses], label='Training Loss')
+plt.title('Training Loss over Epochs')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.grid(True)
+plt.legend()
+
+# Plot training accuracy
+plt.subplot(1, 2, 2) # 1 row, 2 columns, second plot
+plt.plot(accuracies, label='Training Accuracy', color='orange')
+plt.title('Training Accuracy over Epochs')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.grid(True)
+plt.legend()
+
+# Display the plots
+plt.tight_layout() # Adjust subplot parameters for a tight layout
+plt.show()
